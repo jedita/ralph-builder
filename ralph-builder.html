@@ -381,6 +381,7 @@ function renderSidebar() {
     <h3>Prioritization</h3>
     <select class="ctrl" onchange="state.prioritization=this.value;render()">
       <option value="smart" ${state.prioritization==='smart'?'selected':''}>Smart (learnings > deps > complexity)</option>
+      <option value="simple" ${state.prioritization==='simple'?'selected':''}>Simple (learnings > remaining)</option>
       <option value="sequential" ${state.prioritization==='sequential'?'selected':''}>Sequential (first unfixed)</option>
     </select>
 
@@ -410,11 +411,11 @@ function renderCanvas() {
 function generateScript() {
   const s = state;
 
-  const statusField = s.mode === 'gap-fix' ? 'fixed' : s.statusField;
-  const learningsField = s.mode === 'gap-fix' ? 'feedback' : s.learningsField;
+  const statusField = s.statusField;
+  const learningsField = s.learningsField;
   const context = s.contextFile ? `@${s.contextFile}` : 'contract.md';
   const tasksFile = s.tasksFile || 'tasks.json';
-  const branch = s.branch || 'feat/my-feature';
+  const branch = s.branch || (s.mode === 'gap-fix' ? 'none' : 'feat/my-feature');
 
   let priorityBlock = '';
   if (s.prioritization === 'smart') {
@@ -423,6 +424,10 @@ function generateScript() {
       b) task that has the most dependingTasks
       c) task that is the most complex of those remaining
       d) remaining task`;
+  } else if (s.prioritization === 'simple') {
+    priorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
+      a) first task that already have ${learningsField} field not empty
+      b) remaining task`;
   } else {
     priorityBlock = `    3. Pick up first task that has ${statusField}=false`;
   }
@@ -430,6 +435,130 @@ function generateScript() {
   let featureMapLine = '';
   if (s.featureMapFile) {
     featureMapLine = `\n    feature mapping: @${s.featureMapFile}`;
+  }
+
+  // Gap-fix mode: completely different prompt template
+  if (s.mode === 'gap-fix') {
+    let gapPriorityBlock = '';
+    if (s.prioritization === 'smart') {
+      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
+      a) first task that already have ${learningsField} field not empty
+      b) task that has the most dependingTasks
+      c) task that is the most complex of those remaining
+      d) remaining task`;
+    } else if (s.prioritization === 'simple') {
+      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
+      a) first task that already have ${learningsField} field not empty
+      b) remaining task`;
+    } else {
+      gapPriorityBlock = `    3. Pick up first task that has ${statusField}=false`;
+    }
+
+    const runnerCmd = getRunnerCommand();
+
+    return esc(`#!/bin/bash
+set -e
+
+MAX=\${1:-${s.maxIterations}}
+PROMPT="You are Ralph, an autonomous coding agent.
+    ## Context
+
+    tasks file: @${tasksFile}
+    overall context: ${context}${featureMapLine}
+    working branch: ${branch}
+
+    ## Steps
+
+    1. Read overall context${s.featureMapFile ? ' and feature mapping' : ''}
+    2. Read tasks file - check ${learningsField} first for patterns from previous iterations
+${gapPriorityBlock}
+    4. Compare the source against the destination. For EACH element in the source feature:
+        - Read the actual source code (not just filenames)
+        - Search the destination for equivalent functionality by:
+          a. Same/similar filename
+          b. Same/similar symbol names (functions, classes, composables)
+          c. Same API endpoints being called
+          d. Same translation keys or analytics events
+        - Report what you FOUND, not what you assume
+
+      Analyze the following layers in BOTH source and destination:
+        - Components (template, props, emits, slots)
+        - State management (stores, composables, reactive state)
+        - API services (endpoints, payloads, error handling)
+        - Types/interfaces
+        - Translations (keys, values per language)
+        - Analytics/tracking events
+        - Route wiring / page-level orchestration
+        - Static assets (images, fonts)
+        - Test coverage
+        - Third-party dependencies used by the feature
+
+    5. Classify gaps precisely
+${s.parityCheck ? `
+      We are aiming at 100% parity` : ''}
+      ┌────────────────────┬─────────────────────────────────────────────────────────────────────────┐
+      │      Gap type      │                                 Meaning                                 │
+      ├────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+      │ needs creation     │ Nothing exists at destination                                           │
+      ├────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+      │ needs modification  │ Exists but needs changes for this feature                               │
+      ├────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+      │ in place           │ Already exists, no changes needed                                       │
+      ├────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+      │ partial            │ Partially exists - some behavior present, some missing                  │
+      ├────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+      │ incompatible       │ Exists but uses different pattern/library/approach that can't be reused │
+      ├────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+      │ reference only     │ Source element used only as pattern reference, not migrated             │
+      └────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+
+    6. Append following properties to the task object:
+      - destinationPath: where it should live (or 'N/A'),
+      - destinationDescription: what already exists there (or 'nothing'),
+      - gap: needs creation | needs modification | in place | incompatible,
+      - incompatibilities: [list of things that don't map 1:1],
+      - implementationDetail: what needs to happen
+    7. Implement that ONE task only
+
+    ## If done
+
+    - Update tasks file: set ${statusField}=true for this task
+    - Add ${learningsField} to task.${learningsField}[]${s.globalLearnings ? ` AND summarise all task ${learningsField} into root ${learningsField}[]` : ''}
+    - If ALL tasks have ${statusField}=true, output: <promise>COMPLETE</promise>
+    - Do not start to work on the new task
+
+    ## Learnings Format
+
+    Per-task: task.${learningsField}[] array with insights${s.globalLearnings ? `
+    Global: root ${learningsField}[] with each individual learning as a string` : ''}
+"
+
+echo "Starting Ralph - Max $MAX iterations"
+
+for ((i=1; i<=$MAX; i++)); do
+
+  echo "==========================================="
+  echo "  Iteration $i of $MAX"
+  echo "==========================================="
+
+  result=$(
+${runnerCmd}
+  )
+
+  echo "$result"
+
+  if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
+      echo "==========================================="
+      echo "  All tasks complete after $i iterations!"
+      echo "==========================================="
+      exit 0
+  fi${s.sleepBetween > 0 ? `\n\n  sleep ${s.sleepBetween}` : ''}
+done
+
+echo "==========================================="
+echo "  Reached max iterations ($MAX)"
+echo "==========================================="
+exit 1`);
   }
 
   let parityLine = s.parityCheck ? ' Make sure to reproduce the feature with 100% parity compared to the source project regarding functionality, translations and style.' : '';
@@ -568,7 +697,7 @@ function applyPreset(name) {
   if (name === 'feature') {
     Object.assign(state, { mode:'implement', runner:'docker-sandbox', maxIterations:16, statusField:'passes', learningsField:'learnings', globalLearnings:true, parityCheck:true, commitOnPass:true, noClaudeAttribution:true, prioritization:'smart', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   } else if (name === 'gapfix') {
-    Object.assign(state, { mode:'gap-fix', runner:'docker-sandbox', maxIterations:16, statusField:'fixed', learningsField:'feedback', globalLearnings:false, parityCheck:false, commitOnPass:true, noClaudeAttribution:true, prioritization:'sequential', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+    Object.assign(state, { mode:'gap-fix', runner:'docker-sandbox', maxIterations:30, statusField:'passes', learningsField:'learnings', globalLearnings:false, parityCheck:true, commitOnPass:false, noClaudeAttribution:true, prioritization:'simple', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   }
   render();
 }

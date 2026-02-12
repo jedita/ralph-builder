@@ -1,0 +1,33 @@
+{
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/.retool_types/**": true,
+    "**/*tsconfig.json": true,
+    ".cache": true,
+    "retool.config.json": true
+  },
+  "workbench.colorCustomizations": {
+    "activityBar.activeBackground": "#f8de65",
+    "activityBar.background": "#f8de65",
+    "activityBar.foreground": "#15202b",
+    "activityBar.inactiveForeground": "#15202b99",
+    "activityBarBadge.background": "#07987f",
+    "activityBarBadge.foreground": "#e7e7e7",
+    "commandCenter.border": "#15202b99",
+    "sash.hoverBorder": "#f8de65",
+    "statusBar.background": "#f6d434",
+    "statusBar.foreground": "#15202b",
+    "statusBarItem.hoverBackground": "#ecc50a",
+    "statusBarItem.remoteBackground": "#f6d434",
+    "statusBarItem.remoteForeground": "#15202b",
+    "titleBar.activeBackground": "#f6d434",
+    "titleBar.activeForeground": "#15202b",
+    "titleBar.inactiveBackground": "#f6d43499",
+    "titleBar.inactiveForeground": "#15202b99"
+  },
+  "peacock.color": "#f6d434"
+}
