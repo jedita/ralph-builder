@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ralph Wiggum Loop Builder</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #252832;
+    --border: #2e3140;
+    --text: #e2e4e9;
+    --text2: #9498a8;
+    --accent: #7c6ff7;
+    --accent2: #5b4fd4;
+    --green: #34d399;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --blue: #60a5fa;
+    --pink: #f472b6;
+    --orange: #fb923c;
+    --cyan: #22d3ee;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  .header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .header h1 span { color: var(--accent); }
+
+  /* Main layout */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 280px;
+    border-right: 1px solid var(--border);
+    background: var(--bg2);
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 16px;
+  }
+  .sidebar h3 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text2);
+    margin-bottom: 8px;
+    margin-top: 16px;
+  }
+  .sidebar h3:first-child { margin-top: 0; }
+
+  .check-group { display: flex; flex-direction: column; gap: 4px; }
+  .check-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background .1s;
+  }
+  .check-item:hover { background: var(--bg3); }
+  .check-item input[type="checkbox"] { accent-color: var(--accent); }
+
+  select.ctrl {
+    width: 100%;
+    padding: 6px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 4px;
+  }
+  select.ctrl:focus { outline: 1px solid var(--accent); }
+
+  .num-input {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0;
+  }
+  .num-input label { font-size: 13px; flex: 1; }
+  .num-input input {
+    width: 60px;
+    padding: 4px 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .text-field {
+    width: 100%;
+    padding: 6px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .text-field:focus { outline: 1px solid var(--accent); }
+  .text-field::placeholder { color: var(--text2); opacity: 0.6; }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .field-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .field-label {
+    font-size: 11px;
+    color: var(--text2);
+    font-weight: 500;
+  }
+
+  /* Canvas area */
+  .canvas-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .canvas-content {
+    flex: 1;
+    overflow: auto;
+    padding: 24px;
+  }
+
+  /* Prompt output */
+  .prompt-bar {
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+    max-height: 40vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .prompt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .prompt-header span { font-size: 12px; font-weight: 600; color: var(--text2); }
+  .prompt-toggle { font-size: 11px; color: var(--text2); }
+  .prompt-body {
+    flex: 1;
+    overflow: auto;
+    padding: 12px 16px;
+  }
+  .prompt-body pre {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+  }
+  .copy-btn {
+    padding: 4px 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .copy-btn:hover { background: var(--accent2); }
+  .copy-btn.copied { background: var(--green); }
+
+  /* Code output */
+  .code-output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow: auto;
+    max-height: 100%;
+  }
+  .code-output pre {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre;
+  }
+
+  .sidebar-divider {
+    border-top: 1px solid var(--border);
+    margin: 12px 0;
+  }
+
+  .preset-btn {
+    padding: 5px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text2);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .preset-btn:hover { border-color: var(--accent); color: var(--text); }
+  .preset-btn.active { border-color: var(--accent); color: #fff; background: var(--accent2); }
+  .presets { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3d50; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>Ralph Wiggum Loop</span> Builder</h1>
+</div>
+
+<div class="main">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="canvas-area">
+    <div class="canvas-content" id="canvas"></div>
+    <div class="prompt-bar" id="promptBar">
+      <div class="prompt-header" onclick="togglePrompt()">
+        <span>Generated Script</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="prompt-toggle" id="promptToggle">collapse</span>
+          <button class="copy-btn" onclick="event.stopPropagation();copyPrompt()">Copy</button>
+        </div>
+      </div>
+      <div class="prompt-body" id="promptBody">
+        <pre id="promptText"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+const state = {
+  mode: 'implement',
+  runner: 'docker-sandbox',
+  maxIterations: 16,
+  branch: '',
+  tasksFile: 'tasks.json',
+  contextFile: 'contract.md',
+  featureMapFile: '',
+  statusField: 'passes',
+  learningsField: 'learnings',
+  globalLearnings: true,
+  parityCheck: false,
+  commitOnPass: true,
+  noClaudeAttribution: true,
+  sleepBetween: 0,
+  prioritization: 'smart',
+  promptExpanded: true,
+};
+
+// ============================================================
+// RENDER
+// ============================================================
+const sidebar = document.getElementById('sidebar');
+const canvas = document.getElementById('canvas');
+const promptText = document.getElementById('promptText');
+
+function render() {
+  renderSidebar();
+  renderCanvas();
+  updatePrompt();
+}
+
+function renderSidebar() {
+  sidebar.innerHTML = `
+    <h3>Presets</h3>
+    <div class="presets">
+      <button class="preset-btn ${state.mode==='implement'&&state.prioritization==='smart'?'active':''}" onclick="applyPreset('feature')">Feature Migration</button>
+      <button class="preset-btn ${state.mode==='gap-fix'?'active':''}" onclick="applyPreset('gapfix')">Gap Fix</button>
+    </div>
+
+    <h3>Mode</h3>
+    <select class="ctrl" onchange="state.mode=this.value;render()">
+      <option value="implement" ${state.mode==='implement'?'selected':''}>Implement (build features)</option>
+      <option value="gap-fix" ${state.mode==='gap-fix'?'selected':''}>Gap Fix (parity fixes)</option>
+    </select>
+
+    <h3>Runner</h3>
+    <select class="ctrl" onchange="state.runner=this.value;render()">
+      <option value="docker-sandbox" ${state.runner==='docker-sandbox'?'selected':''}>Docker Sandbox (Claude)</option>
+      <option value="local-claude" ${state.runner==='local-claude'?'selected':''}>Local Claude CLI</option>
+      <option value="codex" ${state.runner==='codex'?'selected':''}>Codex</option>
+    </select>
+
+    <h3>Iterations</h3>
+    <div class="num-input">
+      <label>Max iterations</label>
+      <input type="number" value="${state.maxIterations}" min="1" max="100" placeholder="e.g. 16" onchange="state.maxIterations=+this.value;render()">
+    </div>
+
+    <h3>Branch</h3>
+    <input type="text" class="text-field" value="${state.branch}" placeholder="e.g. feat/my-feature" onchange="state.branch=this.value;render()">
+
+    <div class="sidebar-divider"></div>
+
+    <h3>Artifacts</h3>
+    <div class="field-group">
+      <div class="field-row">
+        <span class="field-label">Tasks file</span>
+        <input type="text" class="text-field" value="${state.tasksFile}" placeholder="e.g. tasks.json" onchange="state.tasksFile=this.value;render()">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Context file</span>
+        <input type="text" class="text-field" value="${state.contextFile}" placeholder="e.g. contract.md" onchange="state.contextFile=this.value;render()">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Feature map (optional)</span>
+        <input type="text" class="text-field" value="${state.featureMapFile}" placeholder="e.g. featureMap.json" onchange="state.featureMapFile=this.value;render()">
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <h3>Task Tracking</h3>
+    <div class="num-input">
+      <label>Status field</label>
+      <select class="ctrl" style="width:auto;flex:0" onchange="state.statusField=this.value;render()">
+        <option value="passes" ${state.statusField==='passes'?'selected':''}>passes</option>
+        <option value="fixed" ${state.statusField==='fixed'?'selected':''}>fixed</option>
+      </select>
+    </div>
+    <div class="num-input">
+      <label>Learnings field</label>
+      <select class="ctrl" style="width:auto;flex:0" onchange="state.learningsField=this.value;render()">
+        <option value="learnings" ${state.learningsField==='learnings'?'selected':''}>learnings</option>
+        <option value="feedback" ${state.learningsField==='feedback'?'selected':''}>feedback</option>
+      </select>
+    </div>
+
+    <h3>Prioritization</h3>
+    <select class="ctrl" onchange="state.prioritization=this.value;render()">
+      <option value="smart" ${state.prioritization==='smart'?'selected':''}>Smart (learnings > deps > complexity)</option>
+      <option value="sequential" ${state.prioritization==='sequential'?'selected':''}>Sequential (first unfixed)</option>
+    </select>
+
+    <div class="sidebar-divider"></div>
+
+    <h3>Options</h3>
+    <div class="check-group">
+      <label class="check-item"><input type="checkbox" ${state.globalLearnings?'checked':''} onchange="state.globalLearnings=this.checked;render()"> Global learnings</label>
+      <label class="check-item"><input type="checkbox" ${state.parityCheck?'checked':''} onchange="state.parityCheck=this.checked;render()"> Parity check (100%)</label>
+      <label class="check-item"><input type="checkbox" ${state.commitOnPass?'checked':''} onchange="state.commitOnPass=this.checked;render()"> Commit on pass</label>
+      <label class="check-item"><input type="checkbox" ${state.noClaudeAttribution?'checked':''} onchange="state.noClaudeAttribution=this.checked;render()"> No Claude attribution</label>
+    </div>
+  `;
+}
+
+function renderCanvas() {
+  canvas.innerHTML = `
+    <div class="code-output">
+      <pre id="builderCode">${generateScript()}</pre>
+    </div>
+  `;
+}
+
+// ============================================================
+// SCRIPT GENERATOR
+// ============================================================
+function generateScript() {
+  const s = state;
+
+  const statusField = s.mode === 'gap-fix' ? 'fixed' : s.statusField;
+  const learningsField = s.mode === 'gap-fix' ? 'feedback' : s.learningsField;
+  const context = s.contextFile ? `@${s.contextFile}` : 'contract.md';
+  const tasksFile = s.tasksFile || 'tasks.json';
+  const branch = s.branch || 'feat/my-feature';
+
+  let priorityBlock = '';
+  if (s.prioritization === 'smart') {
+    priorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
+      a) first task that already have ${learningsField} field not empty
+      b) task that has the most dependingTasks
+      c) task that is the most complex of those remaining
+      d) remaining task`;
+  } else {
+    priorityBlock = `    3. Pick up first task that has ${statusField}=false`;
+  }
+
+  let featureMapLine = '';
+  if (s.featureMapFile) {
+    featureMapLine = `\n    feature mapping: @${s.featureMapFile}`;
+  }
+
+  let parityLine = s.parityCheck ? ' Make sure to reproduce the feature with 100% parity compared to the source project regarding functionality, translations and style.' : '';
+
+  let onPassBlock = `    ## If Tests PASS
+
+    - Update tasks file: set ${statusField}=true for this task
+    - Add ${learningsField} to task.${learningsField}[]${s.globalLearnings ? ` AND summarise all task ${learningsField} into root ${learningsField}[]` : ''} for any ${learningsField} that would be useful for any other future task`;
+
+  if (s.commitOnPass) {
+    onPassBlock += `\n    - Git commit on the working branch${s.noClaudeAttribution ? ' (do not attribute claude as a co-author on commits)' : ''}`;
+  }
+  onPassBlock += `\n    - If ALL tasks have ${statusField}=true, output: <promise>COMPLETE</promise>
+    - Do not start to work on the new task`;
+
+  let learningsFormat = `\n\n    ## Learnings Format\n\n    Per-task: task.${learningsField}[] array with {iteration, insights[]}`;
+  if (s.globalLearnings) {
+    learningsFormat += `\n    Global: root ${learningsField}[] with each individual learning as a string`;
+  }
+
+  const runnerCmd = getRunnerCommand();
+
+  return esc(`#!/bin/bash
+set -e
+
+MAX=\${1:-${s.maxIterations}}
+PROMPT="You are Ralph, an autonomous coding agent.
+    ## Context
+
+    tasks file: @${tasksFile}
+    overall context: ${context}${featureMapLine}
+    working branch: ${branch}
+
+    ## Steps
+
+    1. Read overall context${s.featureMapFile ? ' and feature mapping' : ''}
+    2. Read tasks file - check ${learningsField} first for patterns from previous iterations
+${priorityBlock}
+    4. Implement that ONE task only${parityLine}
+    5. Run tests/typecheck to verify
+
+${onPassBlock}
+
+    ## If Tests FAIL
+
+    - Do NOT mark ${statusField}=true
+    - Add what went wrong to task.${learningsField}[] array (so next iteration can learn)
+    - Do not start to work on the new task${learningsFormat}
+"
+
+echo "Starting Ralph - Max $MAX iterations"
+
+for ((i=1; i<=$MAX; i++)); do
+
+  echo "==========================================="
+  echo "  Iteration $i of $MAX"
+  echo "==========================================="
+
+  result=$(
+${runnerCmd}
+  )
+
+  echo "$result"
+
+  if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
+      echo "==========================================="
+      echo "  All tasks complete after $i iterations!"
+      echo "==========================================="
+      exit 0
+  fi${s.sleepBetween > 0 ? `\n\n  sleep ${s.sleepBetween}` : ''}
+done
+
+echo "==========================================="
+echo "  Reached max iterations ($MAX)"
+echo "==========================================="
+exit 1`);
+}
+
+function getRunnerCommand() {
+  const s = state;
+  if (s.runner === 'docker-sandbox') {
+    return `    docker sandbox run claude \\
+      --print \\
+      $PROMPT \\
+      --output-format stream-json \\
+      --verbose \\
+      --include-partial-messages \\
+      | claude-stream-format`;
+  } else if (s.runner === 'local-claude') {
+    return `    claude --dangerously-skip-permissions -p "$PROMPT"`;
+  } else {
+    return `    codex exec $PROMPT`;
+  }
+}
+
+function esc(s) {
+  return s.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================
+// PROMPT OUTPUT
+// ============================================================
+function updatePrompt() {
+  promptText.textContent = '';
+  const script = generateScript().replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  promptText.textContent = script;
+}
+
+function togglePrompt() {
+  state.promptExpanded = !state.promptExpanded;
+  const body = document.getElementById('promptBody');
+  const toggle = document.getElementById('promptToggle');
+  if (state.promptExpanded) {
+    body.style.display = 'block';
+    toggle.textContent = 'collapse';
+  } else {
+    body.style.display = 'none';
+    toggle.textContent = 'expand';
+  }
+}
+
+function copyPrompt() {
+  const text = promptText.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+// ============================================================
+// PRESETS
+// ============================================================
+function applyPreset(name) {
+  if (name === 'feature') {
+    Object.assign(state, { mode:'implement', runner:'docker-sandbox', maxIterations:16, statusField:'passes', learningsField:'learnings', globalLearnings:true, parityCheck:true, commitOnPass:true, noClaudeAttribution:true, prioritization:'smart', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+  } else if (name === 'gapfix') {
+    Object.assign(state, { mode:'gap-fix', runner:'docker-sandbox', maxIterations:16, statusField:'fixed', learningsField:'feedback', globalLearnings:false, parityCheck:false, commitOnPass:true, noClaudeAttribution:true, prioritization:'sequential', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+  }
+  render();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+render();
+</script>
+</body>
+</html>
