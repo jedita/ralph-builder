@@ -282,6 +282,7 @@
 // ============================================================
 const state = {
   mode: 'implement',
+  model: 'sonnet',
   runner: 'docker-sandbox',
   maxIterations: 16,
   branch: '',
@@ -317,13 +318,19 @@ function renderSidebar() {
     <h3>Presets</h3>
     <div class="presets">
       <button class="preset-btn ${state.mode==='implement'&&state.prioritization==='smart'?'active':''}" onclick="applyPreset('feature')">Feature Migration</button>
-      <button class="preset-btn ${state.mode==='gap-fix'?'active':''}" onclick="applyPreset('gapfix')">Gap Fix</button>
+      <button class="preset-btn ${state.mode==='gap-investigation'?'active':''}" onclick="applyPreset('gapfix')">Gap Investigation</button>
     </div>
 
     <h3>Mode</h3>
     <select class="ctrl" onchange="state.mode=this.value;render()">
       <option value="implement" ${state.mode==='implement'?'selected':''}>Implement (build features)</option>
-      <option value="gap-fix" ${state.mode==='gap-fix'?'selected':''}>Gap Fix (parity fixes)</option>
+      <option value="gap-investigation" ${state.mode==='gap-investigation'?'selected':''}>Gap investigation (parity match)</option>
+    </select>
+
+    <h3>Model</h3>
+    <select class="ctrl" onchange="state.model=this.value;render()">
+      <option value="sonnet" ${state.model==='sonnet'?'selected':''}>Sonnet</option>
+      <option value="opus" ${state.model==='opus'?'selected':''}>Opus</option>
     </select>
 
     <h3>Runner</h3>
@@ -415,7 +422,7 @@ function generateScript() {
   const learningsField = s.learningsField;
   const context = s.contextFile ? `@${s.contextFile}` : 'contract.md';
   const tasksFile = s.tasksFile || 'tasks.json';
-  const branch = s.branch || (s.mode === 'gap-fix' ? 'none' : 'feat/my-feature');
+  const branch = s.branch || (s.mode === 'gap-investigation' ? 'none' : 'feat/my-feature');
 
   let priorityBlock = '';
   if (s.prioritization === 'smart') {
@@ -437,21 +444,21 @@ function generateScript() {
     featureMapLine = `\n    feature mapping: @${s.featureMapFile}`;
   }
 
-  // Gap-fix mode: completely different prompt template
-  if (s.mode === 'gap-fix') {
+  // Gap-investigation mode: completely different prompt template
+  if (s.mode === 'gap-investigation') {
     let gapPriorityBlock = '';
     if (s.prioritization === 'smart') {
-      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
+      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false or undefined) following this rule:
       a) first task that already have ${learningsField} field not empty
       b) task that has the most dependingTasks
       c) task that is the most complex of those remaining
       d) remaining task`;
     } else if (s.prioritization === 'simple') {
-      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
+      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false or undefined) following this rule:
       a) first task that already have ${learningsField} field not empty
       b) remaining task`;
     } else {
-      gapPriorityBlock = `    3. Pick up first task that has ${statusField}=false`;
+      gapPriorityBlock = `    3. Pick up first task that has ${statusField}=false  or undefined`;
     }
 
     const runnerCmd = getRunnerCommand();
@@ -466,6 +473,10 @@ PROMPT="You are Ralph, an autonomous coding agent.
     tasks file: @${tasksFile}
     overall context: ${context}${featureMapLine}
     working branch: ${branch}
+
+    ## Mode: INVESTIGATION ONLY
+
+    Do NOT write, edit, or create any code files. Your only output is updating @${tasksFile}
 
     ## Steps
 
@@ -512,13 +523,14 @@ ${s.parityCheck ? `
       │ reference only     │ Source element used only as pattern reference, not migrated             │
       └────────────────────┴─────────────────────────────────────────────────────────────────────────┘
 
-    6. Append following properties to the task object:
+    6. Record your findings by appending following properties to the task object (this is your final output — do not proceed to implementation):
       - destinationPath: where it should live (or 'N/A'),
       - destinationDescription: what already exists there (or 'nothing'),
       - gap: needs creation | needs modification | in place | incompatible,
       - incompatibilities: [list of things that don't map 1:1],
       - implementationDetail: what needs to happen
-    7. Implement that ONE task only
+
+    7. Work on that ONE task only.
 
     ## If done
 
@@ -597,7 +609,7 @@ PROMPT="You are Ralph, an autonomous coding agent.
     1. Read overall context${s.featureMapFile ? ' and feature mapping' : ''}
     2. Read tasks file - check ${learningsField} first for patterns from previous iterations
 ${priorityBlock}
-    4. Implement that ONE task only${parityLine}
+    4. Work on that ONE task only${parityLine}
     5. Run tests/typecheck to verify
 
 ${onPassBlock}
@@ -641,11 +653,9 @@ function getRunnerCommand() {
   const s = state;
   if (s.runner === 'docker-sandbox') {
     return `    docker sandbox run claude \\
-      --print \\
+      --print --model ${s.model} \\
       $PROMPT \\
-      --output-format stream-json \\
-      --verbose \\
-      --include-partial-messages \\
+      --output-format stream-json --verbose --include-partial-messages \\
       | claude-stream-format`;
   } else if (s.runner === 'local-claude') {
     return `    claude --dangerously-skip-permissions -p "$PROMPT"`;
@@ -695,9 +705,9 @@ function copyPrompt() {
 // ============================================================
 function applyPreset(name) {
   if (name === 'feature') {
-    Object.assign(state, { mode:'implement', runner:'docker-sandbox', maxIterations:16, statusField:'passes', learningsField:'learnings', globalLearnings:true, parityCheck:true, commitOnPass:true, noClaudeAttribution:true, prioritization:'smart', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+    Object.assign(state, { mode:'implement', model:'sonnet', runner:'docker-sandbox', maxIterations:16, statusField:'passes', learningsField:'learnings', globalLearnings:true, parityCheck:true, commitOnPass:true, noClaudeAttribution:true, prioritization:'smart', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   } else if (name === 'gapfix') {
-    Object.assign(state, { mode:'gap-fix', runner:'docker-sandbox', maxIterations:30, statusField:'passes', learningsField:'learnings', globalLearnings:false, parityCheck:true, commitOnPass:false, noClaudeAttribution:true, prioritization:'simple', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+    Object.assign(state, { mode:'gap-investigation', model:'opus', runner:'docker-sandbox', maxIterations:30, statusField:'passes', learningsField:'learnings', globalLearnings:false, parityCheck:true, commitOnPass:false, noClaudeAttribution:true, prioritization:'simple', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   }
   render();
 }
