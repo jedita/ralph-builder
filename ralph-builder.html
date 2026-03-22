@@ -318,12 +318,14 @@ function renderSidebar() {
     <h3>Presets</h3>
     <div class="presets">
       <button class="preset-btn ${state.mode==='implement'&&state.prioritization==='smart'?'active':''}" onclick="applyPreset('feature')">Feature Migration</button>
+      <button class="preset-btn ${state.mode==='research'?'active':''}" onclick="applyPreset('research')">Research</button>
       <button class="preset-btn ${state.mode==='gap-investigation'?'active':''}" onclick="applyPreset('gapfix')">Gap Investigation</button>
     </div>
 
     <h3>Mode</h3>
     <select class="ctrl" onchange="state.mode=this.value;render()">
       <option value="implement" ${state.mode==='implement'?'selected':''}>Implement (build features)</option>
+      <option value="research" ${state.mode==='research'?'selected':''}>Research (validate plan)</option>
       <option value="gap-investigation" ${state.mode==='gap-investigation'?'selected':''}>Gap investigation (parity match)</option>
     </select>
 
@@ -375,6 +377,7 @@ function renderSidebar() {
       <select class="ctrl" style="width:auto;flex:0" onchange="state.statusField=this.value;render()">
         <option value="passes" ${state.statusField==='passes'?'selected':''}>passes</option>
         <option value="fixed" ${state.statusField==='fixed'?'selected':''}>fixed</option>
+        <option value="done" ${state.statusField==='done'?'selected':''}>done</option>
       </select>
     </div>
     <div class="num-input">
@@ -444,6 +447,91 @@ function generateScript() {
     featureMapLine = `\n    feature mapping: @${s.featureMapFile}`;
   }
 
+  // Mode-specific opening sentence
+  const modeIntro = {
+    'implement': 'You are Ralph, an autonomous engineer implementing code.',
+    'research': 'You are Ralph, a researcher investigating and validating a plan.',
+    'gap-investigation': 'You are Ralph, an autonomous engineer investigating migration gaps.',
+  }[s.mode];
+
+  // Research mode: plan and document, no code writing
+  if (s.mode === 'research') {
+    const runnerCmd = getRunnerCommand();
+
+    return esc(`#!/bin/bash
+set -e
+
+MAX=\${1:-${s.maxIterations}}
+PROMPT="${modeIntro}
+    ## Context
+
+    tasks file: @${tasksFile}
+    overall context: ${context}${featureMapLine}${branch ? `
+    working branch: ${branch}` : ''}
+
+    ## Mode: RESEARCH ONLY (Plan Mode)
+
+    Do NOT write, edit, or create any code files.
+    Do NOT create branches or make commits.
+    Your purpose is to plan and document the plan.
+    Your only output is updating @${tasksFile} with your findings.
+
+    ## Steps
+
+    1. Read overall context${s.featureMapFile ? ' and feature mapping' : ''}
+    2. Read tasks file
+    3. Pick up first task that has ${statusField}=false or undefined
+    4. For the selected task, create the plan by investigating:
+        - Read the actual codebase to understand current state
+        - Think about the right approach
+        - Identify any missing steps or tasks not covered by the plan
+        - Evaluate complexity estimates against the actual code
+        - Look for potential blockers, risks, or edge cases
+
+    5. Record your findings by updating the task object with:
+      - <task>.${statusField}
+      - <task>.plan
+      - <task>.complexityAssessment
+      - <task>.risks
+
+    6. Work on that ONE task only.
+
+    ## If done
+
+    - Update tasks file: set ${statusField}=true for this task
+    - Overall learnings: <task>.${learningsField}[] array with insights
+    - If ALL tasks have ${statusField}=true, output: <promise>COMPLETE</promise>
+    - Do not start to work on the next task
+"
+
+echo "Starting Ralph (Research Mode) - Max $MAX iterations"
+
+for ((i=1; i<=$MAX; i++)); do
+
+  echo "==========================================="
+  echo "  Iteration $i of $MAX (Research)"
+  echo "==========================================="
+
+  result=$(
+${runnerCmd}
+  )
+
+  echo "$result"
+
+  if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
+      echo "==========================================="
+      echo "  All tasks planned after $i iterations!"
+      echo "==========================================="
+      exit 0
+  fi${s.sleepBetween > 0 ? `\n\n  sleep ${s.sleepBetween}` : ''}
+done
+
+echo "==========================================="
+echo "  Reached max iterations ($MAX)"
+echo "==========================================="
+exit 1`);
+  }
+
   // Gap-investigation mode: completely different prompt template
   if (s.mode === 'gap-investigation') {
     let gapPriorityBlock = '';
@@ -467,7 +555,7 @@ function generateScript() {
 set -e
 
 MAX=\${1:-${s.maxIterations}}
-PROMPT="You are Ralph, an autonomous coding agent.
+PROMPT="${modeIntro}
     ## Context
 
     tasks file: @${tasksFile}
@@ -597,7 +685,7 @@ exit 1`);
 set -e
 
 MAX=\${1:-${s.maxIterations}}
-PROMPT="You are Ralph, an autonomous coding agent.
+PROMPT="${modeIntro}
     ## Context
 
     tasks file: @${tasksFile}
@@ -706,6 +794,8 @@ function copyPrompt() {
 function applyPreset(name) {
   if (name === 'feature') {
     Object.assign(state, { mode:'implement', model:'sonnet', runner:'docker-sandbox', maxIterations:16, statusField:'passes', learningsField:'learnings', globalLearnings:true, parityCheck:true, commitOnPass:true, noClaudeAttribution:true, prioritization:'smart', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+  } else if (name === 'research') {
+    Object.assign(state, { mode:'research', model:'opus', runner:'docker-sandbox', maxIterations:4, statusField:'done', learningsField:'learnings', globalLearnings:false, parityCheck:false, commitOnPass:false, noClaudeAttribution:true, prioritization:'sequential', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   } else if (name === 'gapfix') {
     Object.assign(state, { mode:'gap-investigation', model:'opus', runner:'docker-sandbox', maxIterations:30, statusField:'passes', learningsField:'learnings', globalLearnings:false, parityCheck:true, commitOnPass:false, noClaudeAttribution:true, prioritization:'simple', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   }
