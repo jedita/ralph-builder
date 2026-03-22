@@ -283,7 +283,6 @@
 const state = {
   mode: 'implement',
   model: 'sonnet',
-  runner: 'docker-sandbox',
   maxIterations: 16,
   branch: '',
   tasksFile: 'tasks.json',
@@ -335,14 +334,7 @@ function renderSidebar() {
       <option value="opus" ${state.model==='opus'?'selected':''}>Opus</option>
     </select>
 
-    <h3>Runner</h3>
-    <select class="ctrl" onchange="state.runner=this.value;render()">
-      <option value="docker-sandbox" ${state.runner==='docker-sandbox'?'selected':''}>Docker Sandbox (Claude)</option>
-      <option value="local-claude" ${state.runner==='local-claude'?'selected':''}>Local Claude CLI</option>
-      <option value="codex" ${state.runner==='codex'?'selected':''}>Codex</option>
-    </select>
-
-    <h3>Iterations</h3>
+<h3>Iterations</h3>
     <div class="num-input">
       <label>Max iterations</label>
       <input type="number" value="${state.maxIterations}" min="1" max="100" placeholder="e.g. 16" onchange="state.maxIterations=+this.value;render()">
@@ -512,13 +504,12 @@ for ((i=1; i<=$MAX; i++)); do
   echo "  Iteration $i of $MAX (Research)"
   echo "==========================================="
 
-  result=$(
+  tmpfile=$(mktemp)
+  trap "rm -f $tmpfile" EXIT
+
 ${runnerCmd}
-  )
 
-  echo "$result"
-
-  if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
+  if grep -q '<promise>COMPLETE</promise>' "$tmpfile"; then
       echo "==========================================="
       echo "  All tasks planned after $i iterations!"
       echo "==========================================="
@@ -641,13 +632,12 @@ for ((i=1; i<=$MAX; i++)); do
   echo "  Iteration $i of $MAX"
   echo "==========================================="
 
-  result=$(
+  tmpfile=$(mktemp)
+  trap "rm -f $tmpfile" EXIT
+
 ${runnerCmd}
-  )
 
-  echo "$result"
-
-  if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
+  if grep -q '<promise>COMPLETE</promise>' "$tmpfile"; then
       echo "==========================================="
       echo "  All tasks complete after $i iterations!"
       echo "==========================================="
@@ -717,13 +707,12 @@ for ((i=1; i<=$MAX; i++)); do
   echo "  Iteration $i of $MAX"
   echo "==========================================="
 
-  result=$(
+  tmpfile=$(mktemp)
+  trap "rm -f $tmpfile" EXIT
+
 ${runnerCmd}
-  )
 
-  echo "$result"
-
-  if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
+  if grep -q '<promise>COMPLETE</promise>' "$tmpfile"; then
       echo "==========================================="
       echo "  All tasks complete after $i iterations!"
       echo "==========================================="
@@ -738,18 +727,13 @@ exit 1`);
 }
 
 function getRunnerCommand() {
-  const s = state;
-  if (s.runner === 'docker-sandbox') {
-    return `    docker sandbox run claude \\
-      --print --model ${s.model} \\
+  return `    docker sandbox run claude \\
+      --print --model ${state.model} \\
       $PROMPT \\
       --output-format stream-json --verbose --include-partial-messages \\
-      | claude-stream-format`;
-  } else if (s.runner === 'local-claude') {
-    return `    claude --dangerously-skip-permissions -p "$PROMPT"`;
-  } else {
-    return `    codex exec $PROMPT`;
-  }
+      | stdbuf -oL claude-stream-format \\
+      | stdbuf -oL sed $'s/$/\\r/' \\
+      | tee "$tmpfile"`;
 }
 
 function esc(s) {
@@ -793,11 +777,11 @@ function copyPrompt() {
 // ============================================================
 function applyPreset(name) {
   if (name === 'feature') {
-    Object.assign(state, { mode:'implement', model:'sonnet', runner:'docker-sandbox', maxIterations:16, statusField:'passes', learningsField:'learnings', globalLearnings:true, parityCheck:true, commitOnPass:true, noClaudeAttribution:true, prioritization:'smart', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+    Object.assign(state, { mode:'implement', model:'sonnet', maxIterations:16, statusField:'passes', learningsField:'learnings', globalLearnings:true, parityCheck:true, commitOnPass:true, noClaudeAttribution:true, prioritization:'smart', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   } else if (name === 'research') {
-    Object.assign(state, { mode:'research', model:'opus', runner:'docker-sandbox', maxIterations:4, statusField:'done', learningsField:'learnings', globalLearnings:false, parityCheck:false, commitOnPass:false, noClaudeAttribution:true, prioritization:'sequential', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+    Object.assign(state, { mode:'research', model:'opus', maxIterations:4, statusField:'done', learningsField:'learnings', globalLearnings:false, parityCheck:false, commitOnPass:false, noClaudeAttribution:true, prioritization:'sequential', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   } else if (name === 'gapfix') {
-    Object.assign(state, { mode:'gap-investigation', model:'opus', runner:'docker-sandbox', maxIterations:30, statusField:'passes', learningsField:'learnings', globalLearnings:false, parityCheck:true, commitOnPass:false, noClaudeAttribution:true, prioritization:'simple', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
+    Object.assign(state, { mode:'gap-investigation', model:'opus', maxIterations:30, statusField:'passes', learningsField:'learnings', globalLearnings:false, parityCheck:true, commitOnPass:false, noClaudeAttribution:true, prioritization:'simple', tasksFile:'tasks.json', contextFile:'contract.md', featureMapFile:'' });
   }
   render();
 }
