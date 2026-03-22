@@ -50,6 +50,10 @@ xdg-open ralph-builder.html
 
 Or simply double-click `ralph-builder.html` in your file manager.
 
+## Dependencies
+
+- [claude-stream-format](https://github.com/jedita/claude-stream-format) — used for formatting Claude's streaming output
+
 ## Origin
 
 This project was created using the **playground** skill from [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — Anthropic's CLI tool for Claude. The playground skill generates self-contained, single-file HTML applications with interactive controls and a live preview, designed to let you visually configure something and copy out the result.
