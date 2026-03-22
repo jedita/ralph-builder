@@ -305,11 +305,15 @@ const state = {
 const sidebar = document.getElementById('sidebar');
 const canvas = document.getElementById('canvas');
 const promptText = document.getElementById('promptText');
+const promptBody = document.getElementById('promptBody');
+const promptToggle = document.getElementById('promptToggle');
+const copyBtn = document.querySelector('.copy-btn');
 
 function render() {
   renderSidebar();
-  renderCanvas();
-  updatePrompt();
+  const raw = generateScript();
+  renderCanvas(raw);
+  updatePrompt(raw);
 }
 
 function renderSidebar() {
@@ -334,7 +338,7 @@ function renderSidebar() {
       <option value="opus" ${state.model==='opus'?'selected':''}>Opus</option>
     </select>
 
-<h3>Iterations</h3>
+    <h3>Iterations</h3>
     <div class="num-input">
       <label>Max iterations</label>
       <input type="number" value="${state.maxIterations}" min="1" max="100" placeholder="e.g. 16" onchange="state.maxIterations=+this.value;render()">
@@ -399,10 +403,10 @@ function renderSidebar() {
   `;
 }
 
-function renderCanvas() {
+function renderCanvas(raw) {
   canvas.innerHTML = `
     <div class="code-output">
-      <pre id="builderCode">${generateScript()}</pre>
+      <pre id="builderCode">${esc(raw)}</pre>
     </div>
   `;
 }
@@ -410,6 +414,60 @@ function renderCanvas() {
 // ============================================================
 // SCRIPT GENERATOR
 // ============================================================
+function buildPriorityBlock(statusField, learningsField, prioritization, includeUndefined = false) {
+  const cond = includeUndefined ? `${statusField}=false or undefined` : `${statusField}=false`;
+  if (prioritization === 'smart') {
+    return `    3. Decide which task to work on next (we consider only tasks that have ${cond}) following this rule:
+      a) first task that already have ${learningsField} field not empty
+      b) task that has the most dependingTasks
+      c) task that is the most complex of those remaining
+      d) remaining task`;
+  } else if (prioritization === 'simple') {
+    return `    3. Decide which task to work on next (we consider only tasks that have ${cond}) following this rule:
+      a) first task that already have ${learningsField} field not empty
+      b) remaining task`;
+  }
+  return `    3. Pick up first task that has ${cond}`;
+}
+
+function buildLoopShell(runnerCmd, iterLabel, doneVerb, sleepBetween) {
+  const label = iterLabel ? ` (${iterLabel})` : '';
+  const sleep = sleepBetween > 0 ? `\n\n  sleep ${sleepBetween}` : '';
+  return `for ((i=1; i<=$MAX; i++)); do
+
+  echo "==========================================="
+  echo "  Iteration $i of $MAX${label}"
+  echo "==========================================="
+
+  tmpfile=$(mktemp)
+  trap "rm -f $tmpfile" EXIT
+
+${runnerCmd}
+
+  if grep -q '<promise>COMPLETE</promise>' "$tmpfile"; then
+      echo "==========================================="
+      echo "  All tasks ${doneVerb} after $i iterations!"
+      echo "==========================================="
+      exit 0
+  fi${sleep}
+done
+
+echo "==========================================="
+echo "  Reached max iterations ($MAX)"
+echo "==========================================="
+exit 1`;
+}
+
+function getRunnerCommand(model) {
+  return `    docker sandbox run claude \\
+      --print --model ${model} \\
+      $PROMPT \\
+      --output-format stream-json --verbose --include-partial-messages \\
+      | stdbuf -oL claude-stream-format \\
+      | stdbuf -oL sed $'s/$/\\r/' \\
+      | tee "$tmpfile"`;
+}
+
 function generateScript() {
   const s = state;
 
@@ -418,39 +476,26 @@ function generateScript() {
   const context = s.contextFile ? `@${s.contextFile}` : 'contract.md';
   const tasksFile = s.tasksFile || 'tasks.json';
   const branch = s.branch || (s.mode === 'gap-investigation' ? 'none' : 'feat/my-feature');
-
-  let priorityBlock = '';
-  if (s.prioritization === 'smart') {
-    priorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
-      a) first task that already have ${learningsField} field not empty
-      b) task that has the most dependingTasks
-      c) task that is the most complex of those remaining
-      d) remaining task`;
-  } else if (s.prioritization === 'simple') {
-    priorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false) following this rule:
-      a) first task that already have ${learningsField} field not empty
-      b) remaining task`;
-  } else {
-    priorityBlock = `    3. Pick up first task that has ${statusField}=false`;
-  }
+  const runnerCmd = getRunnerCommand(s.model);
 
   let featureMapLine = '';
   if (s.featureMapFile) {
     featureMapLine = `\n    feature mapping: @${s.featureMapFile}`;
   }
 
-  // Mode-specific opening sentence
   const modeIntro = {
     'implement': 'You are Ralph, an autonomous engineer implementing code.',
     'research': 'You are Ralph, a researcher investigating and validating a plan.',
     'gap-investigation': 'You are Ralph, an autonomous engineer investigating migration gaps.',
   }[s.mode];
 
-  // Research mode: plan and document, no code writing
-  if (s.mode === 'research') {
-    const runnerCmd = getRunnerCommand();
+  const loop = buildLoopShell(runnerCmd,
+    s.mode === 'research' ? 'Research' : '',
+    s.mode === 'research' ? 'planned' : 'complete',
+    s.sleepBetween);
 
-    return esc(`#!/bin/bash
+  if (s.mode === 'research') {
+    return `#!/bin/bash
 set -e
 
 MAX=\${1:-${s.maxIterations}}
@@ -498,51 +543,13 @@ PROMPT="${modeIntro}
 
 echo "Starting Ralph (Research Mode) - Max $MAX iterations"
 
-for ((i=1; i<=$MAX; i++)); do
-
-  echo "==========================================="
-  echo "  Iteration $i of $MAX (Research)"
-  echo "==========================================="
-
-  tmpfile=$(mktemp)
-  trap "rm -f $tmpfile" EXIT
-
-${runnerCmd}
-
-  if grep -q '<promise>COMPLETE</promise>' "$tmpfile"; then
-      echo "==========================================="
-      echo "  All tasks planned after $i iterations!"
-      echo "==========================================="
-      exit 0
-  fi${s.sleepBetween > 0 ? `\n\n  sleep ${s.sleepBetween}` : ''}
-done
-
-echo "==========================================="
-echo "  Reached max iterations ($MAX)"
-echo "==========================================="
-exit 1`);
+${loop}`;
   }
 
-  // Gap-investigation mode: completely different prompt template
   if (s.mode === 'gap-investigation') {
-    let gapPriorityBlock = '';
-    if (s.prioritization === 'smart') {
-      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false or undefined) following this rule:
-      a) first task that already have ${learningsField} field not empty
-      b) task that has the most dependingTasks
-      c) task that is the most complex of those remaining
-      d) remaining task`;
-    } else if (s.prioritization === 'simple') {
-      gapPriorityBlock = `    3. Decide which task to work on next (we consider only tasks that have ${statusField}=false or undefined) following this rule:
-      a) first task that already have ${learningsField} field not empty
-      b) remaining task`;
-    } else {
-      gapPriorityBlock = `    3. Pick up first task that has ${statusField}=false  or undefined`;
-    }
+    const gapPriorityBlock = buildPriorityBlock(statusField, learningsField, s.prioritization, true);
 
-    const runnerCmd = getRunnerCommand();
-
-    return esc(`#!/bin/bash
+    return `#!/bin/bash
 set -e
 
 MAX=\${1:-${s.maxIterations}}
@@ -626,31 +633,10 @@ ${s.parityCheck ? `
 
 echo "Starting Ralph - Max $MAX iterations"
 
-for ((i=1; i<=$MAX; i++)); do
-
-  echo "==========================================="
-  echo "  Iteration $i of $MAX"
-  echo "==========================================="
-
-  tmpfile=$(mktemp)
-  trap "rm -f $tmpfile" EXIT
-
-${runnerCmd}
-
-  if grep -q '<promise>COMPLETE</promise>' "$tmpfile"; then
-      echo "==========================================="
-      echo "  All tasks complete after $i iterations!"
-      echo "==========================================="
-      exit 0
-  fi${s.sleepBetween > 0 ? `\n\n  sleep ${s.sleepBetween}` : ''}
-done
-
-echo "==========================================="
-echo "  Reached max iterations ($MAX)"
-echo "==========================================="
-exit 1`);
+${loop}`;
   }
 
+  const priorityBlock = buildPriorityBlock(statusField, learningsField, s.prioritization);
   let parityLine = s.parityCheck ? ' Make sure to reproduce the feature with 100% parity compared to the source project regarding functionality, translations and style.' : '';
 
   let onPassBlock = `    ## If Tests PASS
@@ -669,9 +655,7 @@ exit 1`);
     learningsFormat += `\n    Global: root ${learningsField}[] with each individual learning as a string`;
   }
 
-  const runnerCmd = getRunnerCommand();
-
-  return esc(`#!/bin/bash
+  return `#!/bin/bash
 set -e
 
 MAX=\${1:-${s.maxIterations}}
@@ -701,39 +685,7 @@ ${onPassBlock}
 
 echo "Starting Ralph - Max $MAX iterations"
 
-for ((i=1; i<=$MAX; i++)); do
-
-  echo "==========================================="
-  echo "  Iteration $i of $MAX"
-  echo "==========================================="
-
-  tmpfile=$(mktemp)
-  trap "rm -f $tmpfile" EXIT
-
-${runnerCmd}
-
-  if grep -q '<promise>COMPLETE</promise>' "$tmpfile"; then
-      echo "==========================================="
-      echo "  All tasks complete after $i iterations!"
-      echo "==========================================="
-      exit 0
-  fi${s.sleepBetween > 0 ? `\n\n  sleep ${s.sleepBetween}` : ''}
-done
-
-echo "==========================================="
-echo "  Reached max iterations ($MAX)"
-echo "==========================================="
-exit 1`);
-}
-
-function getRunnerCommand() {
-  return `    docker sandbox run claude \\
-      --print --model ${state.model} \\
-      $PROMPT \\
-      --output-format stream-json --verbose --include-partial-messages \\
-      | stdbuf -oL claude-stream-format \\
-      | stdbuf -oL sed $'s/$/\\r/' \\
-      | tee "$tmpfile"`;
+${loop}`;
 }
 
 function esc(s) {
@@ -743,32 +695,26 @@ function esc(s) {
 // ============================================================
 // PROMPT OUTPUT
 // ============================================================
-function updatePrompt() {
-  promptText.textContent = '';
-  const script = generateScript().replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-  promptText.textContent = script;
+function updatePrompt(raw) {
+  promptText.textContent = raw;
 }
 
 function togglePrompt() {
   state.promptExpanded = !state.promptExpanded;
-  const body = document.getElementById('promptBody');
-  const toggle = document.getElementById('promptToggle');
   if (state.promptExpanded) {
-    body.style.display = 'block';
-    toggle.textContent = 'collapse';
+    promptBody.style.display = 'block';
+    promptToggle.textContent = 'collapse';
   } else {
-    body.style.display = 'none';
-    toggle.textContent = 'expand';
+    promptBody.style.display = 'none';
+    promptToggle.textContent = 'expand';
   }
 }
 
 function copyPrompt() {
-  const text = promptText.textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    const btn = document.querySelector('.copy-btn');
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  navigator.clipboard.writeText(promptText.textContent).then(() => {
+    copyBtn.textContent = 'Copied!';
+    copyBtn.classList.add('copied');
+    setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 1500);
   });
 }
 
