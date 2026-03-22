@@ -10,7 +10,7 @@ The generated script runs a loop that:
 
 1. Reads a tasks file (`tasks.json`) and a context file (`contract.md`)
 2. Picks the next task using a configurable prioritization strategy
-3. Sends the task to an AI agent (Claude via Docker Sandbox, local CLI, or Codex)
+3. Sends the task to Claude via Docker Sandbox
 4. On success — marks the task as passing, records learnings, and optionally commits
 5. On failure — records what went wrong so the next iteration can learn from it
 6. Repeats until all tasks are complete or max iterations are reached
@@ -18,6 +18,7 @@ The generated script runs a loop that:
 ### Modes
 
 - **Implement** — builds features, runs tests, commits on pass
+- **Research** — validates a plan by investigating the codebase without writing any code
 - **Gap Investigation** — analyzes source vs. destination code for parity gaps without writing any code
 
 ### Configuration options
@@ -25,14 +26,17 @@ The generated script runs a loop that:
 | Option | Description |
 |---|---|
 | Model | Sonnet or Opus |
-| Runner | Docker Sandbox, Local Claude CLI, or Codex |
 | Max iterations | How many loop cycles before giving up |
 | Branch | Git branch to work on |
 | Tasks / Context files | Paths to your task list and context document |
+| Feature map | Optional feature mapping file |
+| Status field | Field name used to track task completion (`passes`, `fixed`, `done`) |
+| Learnings field | Field name used to store iteration insights (`learnings`, `feedback`) |
 | Prioritization | Smart (learnings > deps > complexity), Simple, or Sequential |
 | Global learnings | Aggregate learnings across all tasks |
 | Parity check | Enforce 100% feature parity |
 | Commit on pass | Auto-commit when a task passes |
+| No Claude attribution | Skip co-author attribution on commits |
 
 ## How to run
 
